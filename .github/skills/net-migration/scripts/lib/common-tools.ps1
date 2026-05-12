@@ -43,7 +43,7 @@ function Get-RepoScanPaths($rootPath) {
 
 function Get-RepoInventory($rootPath, [string]$ProjectFilter = '', [string]$AppTypeFilter = '') {
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $excludedPathPattern = "\\bin\\|\\obj\\|\\.git\\|\\.vs\\"
+    $excludedPathPattern = "\\bin\\|\\obj\\|\\.git\\|\\.vs\\|\\migration-reports\\"
     $allFiles = @(Get-ChildItem -Path $rootPath -Recurse -File -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -notmatch $excludedPathPattern })
 

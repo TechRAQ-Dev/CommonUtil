@@ -580,6 +580,182 @@
         "https://learn.microsoft.com/azure/azure-monitor/app/api-custom-events-metrics",
         "https://learn.microsoft.com/dotnet/api/microsoft.applicationinsights.telemetryclient"
       ]
+    },
+
+    {
+      "id": "BC017",
+      "title": "Azure Functions Worker/WebJobs extension package mismatch",
+      "area": "Azure Functions / Bindings",
+      "severity": "High",
+      "errorCodes": ["AZFW0001", "CS0246", "CS1061"],
+      "affectedAppTypes": ["Azure Functions"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Function apps moving to .NET 10 should not mix isolated worker extension packages with in-process WebJobs extension packages. Mixed packages commonly break Service Bus, Event Hubs, Event Grid, Storage, Timer, and Durable Functions bindings at build or host startup time.",
+      "detectionPatterns": [
+        "Microsoft.Azure.WebJobs.Extensions",
+        "Microsoft.Azure.Functions.Worker.Extensions",
+        "Worker.Extensions.ServiceBus",
+        "Worker.Extensions.EventHubs",
+        "Worker.Extensions.EventGrid",
+        "Worker.Extensions.Storage",
+        "Worker.Extensions.DurableTask"
+      ],
+      "effort": "Medium",
+      "autoFixable": false,
+      "fix": {
+        "summary": "For isolated worker apps, remove WebJobs extension packages and use the matching Microsoft.Azure.Functions.Worker.Extensions.* package family. Keep host.json extensionBundle on v4 when used, and validate trigger bindings locally.",
+        "notes": [
+          "Do not keep both Microsoft.Azure.WebJobs.Extensions.ServiceBus and Microsoft.Azure.Functions.Worker.Extensions.ServiceBus.",
+          "Durable Functions isolated worker uses Microsoft.Azure.Functions.Worker.Extensions.DurableTask.",
+          "Storage queues/blobs/tables have separate Worker.Extensions.Storage packages; align them intentionally."
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/azure/azure-functions/dotnet-isolated-process-guide",
+        "https://learn.microsoft.com/azure/azure-functions/functions-bindings-register"
+      ]
+    },
+
+    {
+      "id": "BC018",
+      "title": "Legacy Azure SDK packages should be modernized",
+      "area": "Azure SDK",
+      "severity": "Medium",
+      "errorCodes": ["CS0246", "CS1061", "NU1701"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Older Microsoft.Azure.* and WindowsAzure.* packages are often deprecated, framework-bound, or use pre-Azure.Core authentication models. They may restore with compatibility warnings or fail when related packages are updated for .NET 10.",
+      "detectionPatterns": [
+        "Microsoft.Azure.",
+        "WindowsAzure.",
+        "Microsoft.WindowsAzure.",
+        "CloudStorageAccount",
+        "CloudBlobClient",
+        "CloudQueueClient",
+        "CloudTableClient",
+        "Microsoft.Azure.EventGrid",
+        "Microsoft.Azure.ServiceBus"
+      ],
+      "effort": "Medium",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Prefer modern Azure.* SDK packages and Azure.Identity. Migrate storage to Azure.Storage.* clients, Service Bus to Azure.Messaging.ServiceBus, Event Grid to Azure.Messaging.EventGrid, and identity to DefaultAzureCredential or explicit TokenCredential.",
+        "notes": [
+          "This is usually a targeted code migration, not a safe global search/replace.",
+          "Use dotnet-inspect or package docs to compare old and new API surfaces when build errors are package-specific."
+        ]
+      },
+      "references": [
+        "https://azure.github.io/azure-sdk/dotnet_introduction.html",
+        "https://learn.microsoft.com/azure/storage/blobs/storage-quickstart-blobs-dotnet",
+        "https://learn.microsoft.com/azure/service-bus-messaging/service-bus-dotnet-get-started-with-queues",
+        "https://learn.microsoft.com/azure/event-grid/custom-event-quickstart"
+      ]
+    },
+
+    {
+      "id": "BC019",
+      "title": "Microsoft.Identity.Web and Azure AD B2C authentication alignment",
+      "area": "Authentication / B2C",
+      "severity": "Medium",
+      "errorCodes": ["CS0246", "CS1061", "IDX10214", "IDW10503"],
+      "affectedAppTypes": ["ASP.NET Web API", "ASP.NET Web App"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Azure AD B2C and Microsoft.Identity.Web apps frequently require package and configuration alignment during .NET major upgrades. Misaligned packages or stale AzureAdB2C settings can break login, token validation, downstream API token acquisition, or Swagger auth flows.",
+      "detectionPatterns": [
+        "Microsoft.Identity.Web",
+        "Microsoft.Identity.Client",
+        "AzureAdB2C",
+        "AddMicrosoftIdentityWebApp",
+        "AddMicrosoftIdentityWebApi",
+        "EnableTokenAcquisitionToCallDownstreamApi",
+        "JwtBearerDefaults.AuthenticationScheme"
+      ],
+      "effort": "Medium",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Upgrade Microsoft.Identity.Web/MSAL packages together, verify AzureAd or AzureAdB2C configuration binding, and retest sign-in, token validation, downstream API calls, and Swagger OAuth configuration.",
+        "notes": [
+          "Do not auto-rewrite tenant, policy, authority, or redirect URI values.",
+          "Treat auth changes as high-risk and require focused validation."
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/entra/identity-platform/scenario-web-app-sign-user-overview",
+        "https://learn.microsoft.com/entra/msal/dotnet/",
+        "https://learn.microsoft.com/azure/active-directory-b2c/enable-authentication-web-application"
+      ]
+    },
+
+    {
+      "id": "BC020",
+      "title": "OpenAPI/APIM contract drift after Swagger package upgrades",
+      "area": "API Management / OpenAPI",
+      "severity": "Medium",
+      "errorCodes": ["CS0246", "CS1061"],
+      "affectedAppTypes": ["ASP.NET Web API"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "APIM-backed apps often depend on generated Swagger/OpenAPI output. Upgrading Swashbuckle, NSwag, Microsoft.AspNetCore.OpenApi, or serializer settings can change operation IDs, schemas, enum formats, security schemes, or XML comments and break APIM import or consumers.",
+      "detectionPatterns": [
+        "Swashbuckle.AspNetCore",
+        "NSwag",
+        "Microsoft.AspNetCore.OpenApi",
+        "AddSwaggerGen",
+        "UseSwaggerUI",
+        "OpenApiSecurityScheme",
+        "swagger.json",
+        "openapi.json",
+        "apim"
+      ],
+      "effort": "Medium",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Upgrade OpenAPI packages, build the API, regenerate the OpenAPI document, and compare the contract used by APIM. Preserve operation IDs, security schemes, XML comments, Newtonsoft converters, and enum/string settings when consumers depend on them.",
+        "notes": [
+          "Package updates may be safe, but generated API contract changes require review.",
+          "If APIM artifacts exist, validate import before considering the migration complete."
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/aspnet/core/tutorials/getting-started-with-swashbuckle",
+        "https://learn.microsoft.com/azure/api-management/import-api-from-oas"
+      ]
+    },
+
+    {
+      "id": "BC021",
+      "title": "Azure client credential and retry behavior should be explicit",
+      "area": "Azure SDK / Resilience",
+      "severity": "Low",
+      "errorCodes": ["CS1503", "CS7036"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Distributed apps that upgrade Azure.* clients and Microsoft.Extensions.Http.Resilience may observe changed authentication source selection, retry, timeout, or client lifetime behavior if credentials and client options are left implicit.",
+      "detectionPatterns": [
+        "DefaultAzureCredential",
+        "Azure.Identity",
+        "AddAzureClients",
+        "BlobServiceClient",
+        "ServiceBusClient",
+        "EventGridPublisherClient",
+        "SecretClient",
+        "AddStandardResilienceHandler",
+        "Microsoft.Extensions.Http.Resilience"
+      ],
+      "effort": "Low",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Make Azure client registration explicit: configure TokenCredential, service endpoints, retry policy, timeout, and HttpClient/resilience settings in one place. Validate managed identity locally and in Azure.",
+        "notes": [
+          "Prefer AddAzureClients with DefaultAzureCredential for modern apps, but verify tenant/client identity selection.",
+          "For high-throughput Service Bus, Storage, or Event Grid flows, explicitly set retry and timeout options."
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/azure/sdk/authentication/",
+        "https://learn.microsoft.com/dotnet/azure/sdk/dependency-injection",
+        "https://learn.microsoft.com/dotnet/core/resilience/http-resilience"
+      ]
     }
 
   ],
@@ -596,20 +772,28 @@
       "CS8618": "BC003",
       "CS8625": "BC003",
       "CS0121": ["BC004", "BC010"],
+      "CS0246": ["BC017", "BC018", "BC019", "BC020"],
+      "CS1061": ["BC016", "BC017", "BC018", "BC019", "BC020"],
+      "CS1503": ["BC016", "BC021"],
+      "CS7036": "BC021",
+      "NU1701": "BC018",
+      "AZFW0001": "BC017",
+      "IDX10214": "BC019",
+      "IDW10503": "BC019",
       "NETSDK1136": "BC011",
       "NU1605": ["BC006", "BC015"]
     },
     "byAppType": {
-      "Azure Functions": ["BC002", "BC003", "BC004", "BC014", "BC015"],
-      "ASP.NET Web API": ["BC003", "BC004", "BC006", "BC007", "BC008", "BC014", "BC015"],
-      "Console": ["BC001", "BC003", "BC004", "BC005", "BC008", "BC013", "BC015"],
+      "Azure Functions": ["BC002", "BC003", "BC004", "BC014", "BC015", "BC017", "BC018", "BC021"],
+      "ASP.NET Web API": ["BC003", "BC004", "BC006", "BC007", "BC008", "BC014", "BC015", "BC018", "BC019", "BC020", "BC021"],
+      "Console": ["BC001", "BC003", "BC004", "BC005", "BC008", "BC013", "BC015", "BC018", "BC021"],
       "WPF": ["BC001", "BC003", "BC005", "BC011", "BC012", "BC013", "BC015"],
-      "All": ["BC001", "BC003", "BC004", "BC005", "BC009", "BC010", "BC013", "BC015", "BC016"]
+      "All": ["BC001", "BC003", "BC004", "BC005", "BC009", "BC010", "BC013", "BC015", "BC016", "BC018", "BC021"]
     },
     "bySeverity": {
-      "High": ["BC001", "BC002"],
-      "Medium": ["BC003", "BC005", "BC007", "BC009", "BC012", "BC014", "BC016"],
-      "Low": ["BC004", "BC006", "BC008", "BC010", "BC011", "BC013", "BC015"]
+      "High": ["BC001", "BC002", "BC017"],
+      "Medium": ["BC003", "BC005", "BC007", "BC009", "BC012", "BC014", "BC016", "BC018", "BC019", "BC020"],
+      "Low": ["BC004", "BC006", "BC008", "BC010", "BC011", "BC013", "BC015", "BC021"]
     },
     "autoFixable": ["BC001", "BC002", "BC003", "BC004", "BC006", "BC010", "BC011", "BC015", "BC016"]
   }

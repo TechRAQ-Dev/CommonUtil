@@ -212,7 +212,9 @@ After 5 iterations still failing: list remaining errors, explain each, give conc
 
 **Removed/obsolete APIs:** Check Microsoft migration docs; use AI knowledge of the target version for idiomatic replacement.
 
-**Catalog-first:** Before a manual fix, check `./scripts/versions/net<N>/breaking-changes.json` for matching error codes or detection patterns. If you find a recurring breaking change not in the catalog, add a new entry with `id`, `title`, `detectionPatterns`, `fix.summary`, and `references`.
+**Catalog-first:** Before a manual fix, check `./scripts/versions/net<N>/breaking-changes.json` for matching error codes or detection patterns. If an entry exists, apply its `fix.summary` and references first.
+
+**Catalog feedback loop:** When you successfully fix a breaking change that is missing from the catalog, add or update an entry in `./scripts/versions/net<N>/breaking-changes.json` before finishing the migration. Include `id`, `title`, `severity`, `area`, `description`, `detectionPatterns`, `fix.summary`, and `references`. Also add compiler/package error codes to `quickReference.byErrorCode` when the fix maps to a repeatable error like `CSxxxx`, `NUxxxx`, `NETSDKxxxx`, or package-specific analyzer IDs. Keep entries generic and reusable; do not include app-specific file paths or customer names.
 
 **dotnet-inspect (API diff):** When a build error involves a renamed, moved, or removed API and the breaking-changes catalog has no entry, use `dotnet-inspect diff` to find the exact change before writing a fix:
 ```bash

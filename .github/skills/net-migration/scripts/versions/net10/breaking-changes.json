@@ -1,0 +1,616 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0",
+  "targetFramework": "net10.0",
+  "generatedDate": "2026-04-27",
+  "referenceUrl": "https://learn.microsoft.com/dotnet/core/compatibility/10.0",
+  "breakingChanges": [
+
+    {
+      "id": "BC001",
+      "title": "BinaryFormatter fully removed",
+      "area": "Serialization",
+      "severity": "High",
+      "errorCodes": ["CS0619", "SYSLIB0011", "PlatformNotSupportedException"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "BinaryFormatter is fully removed in .NET 10. It was disabled by default since .NET 7 and flagged as obsolete. Any usage will cause a build or runtime failure.",
+      "detectionPatterns": ["BinaryFormatter", "System.Runtime.Serialization.Formatters.Binary"],
+      "effort": "Medium",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Replace BinaryFormatter with System.Text.Json or Newtonsoft.Json serialization.",
+        "preferredReplacement": "System.Text.Json",
+        "before": {
+          "language": "csharp",
+          "code": "using System.Runtime.Serialization.Formatters.Binary;\n\nvar formatter = new BinaryFormatter();\n\n// Serialize\nusing var stream = new FileStream(path, FileMode.Create);\nformatter.Serialize(stream, myObject);\n\n// Deserialize\nusing var readStream = new FileStream(path, FileMode.Open);\nvar result = (MyType)formatter.Deserialize(readStream);"
+        },
+        "after": {
+          "language": "csharp",
+          "code": "using System.Text.Json;\n\n// Serialize\nvar json = JsonSerializer.Serialize(myObject);\nawait File.WriteAllTextAsync(path, json);\n\n// Deserialize\nvar json = await File.ReadAllTextAsync(path);\nvar result = JsonSerializer.Deserialize<MyType>(json);"
+        },
+        "notes": [
+          "If the type uses [Serializable] attribute, replace with [JsonSerializable] or remove it.",
+          "If properties are non-public, use JsonInclude or a custom converter.",
+          "For binary performance-critical paths, consider System.Text.Json with Utf8JsonWriter or MessagePack."
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/standard/serialization/binaryformatter-migration-guide",
+        "https://learn.microsoft.com/dotnet/core/compatibility/serialization/7.0/binaryformatter-disabled"
+      ]
+    },
+
+    {
+      "id": "BC002",
+      "title": "Azure Functions in-process model unsupported",
+      "area": "Azure Functions",
+      "severity": "High",
+      "errorCodes": ["CS0246", "CS0234", "build failure"],
+      "affectedAppTypes": ["Azure Functions"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "The Azure Functions in-process hosting model is not supported on .NET 10. All functions must use the isolated worker model.",
+      "detectionPatterns": [
+        "FunctionsStartup",
+        "IWebJobsStartup",
+        "[FunctionName(",
+        "IFunctionsHostBuilder"
+      ],
+      "_note": "Patterns target in-process-specific code only. [FunctionName( is the in-process attribute; isolated worker uses [Function(. Microsoft.Azure.WebJobs package name is intentionally excluded — it appears in isolated worker projects too (e.g. via Extensions.ServiceBus).",
+      "effort": "High",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Port from in-process model to isolated worker model.",
+        "before": {
+          "language": "csharp",
+          "label": "Program.cs (in-process)",
+          "code": "[assembly: FunctionsStartup(typeof(Startup))]\n\npublic class Startup : FunctionsStartup\n{\n    public override void Configure(IFunctionsHostBuilder builder)\n    {\n        builder.Services.AddSingleton<IMyService, MyService>();\n    }\n}"
+        },
+        "after": {
+          "language": "csharp",
+          "label": "Program.cs (isolated worker)",
+          "code": "var host = new HostBuilder()\n    .ConfigureFunctionsWorkerDefaults()\n    .ConfigureServices(services =>\n    {\n        services.AddSingleton<IMyService, MyService>();\n    })\n    .Build();\n\nawait host.RunAsync();"
+        },
+        "additionalChanges": [
+          {
+            "file": "Function class",
+            "before": "[FunctionName(\"MyFunc\")]\npublic async Task Run([ServiceBusTrigger(\"queue\")] string msg, ILogger log) { }",
+            "after": "[Function(\"MyFunc\")]\npublic async Task Run([ServiceBusTrigger(\"queue\")] string msg, FunctionContext ctx)\n{\n    var log = ctx.GetLogger<MyFunction>();\n}"
+          },
+          {
+            "file": ".csproj packages",
+            "before": "<PackageReference Include=\"Microsoft.NET.Sdk.Functions\" Version=\"4.x.x\" />",
+            "after": "<PackageReference Include=\"Microsoft.Azure.Functions.Worker\" Version=\"2.x.x\" />\n<PackageReference Include=\"Microsoft.Azure.Functions.Worker.Sdk\" Version=\"2.x.x\" />\n<PackageReference Include=\"Microsoft.Azure.Functions.Worker.Extensions.Http.AspNetCore\" Version=\"2.x.x\" />"
+          },
+          {
+            "file": "host.json",
+            "before": "\"version\": \"[3.*, 4.0.0)\"",
+            "after": "\"version\": \"[4.*, 5.0.0)\""
+          }
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/azure/azure-functions/migrate-dotnet-to-isolated-model",
+        "https://learn.microsoft.com/azure/azure-functions/dotnet-isolated-process-guide"
+      ]
+    },
+
+    {
+      "id": "BC003",
+      "title": "Nullable reference type warnings become errors",
+      "area": "Language / C# 14",
+      "severity": "Medium",
+      "errorCodes": ["CS8600", "CS8601", "CS8602", "CS8603", "CS8604", "CS8618", "CS8625"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Projects with <Nullable>enable</Nullable> and <TreatWarningsAsErrors>true</TreatWarningsAsErrors> will fail the build. Nullable analysis is stricter in .NET 10 / C# 14.",
+      "detectionPatterns": ["?", "null!", "#nullable"],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Add null checks, use null-forgiving operator where safe, or update type declarations.",
+        "cases": [
+          {
+            "errorCode": "CS8600",
+            "description": "Converting null literal or possible null value to non-nullable type.",
+            "before": "string name = GetName();",
+            "after": "string name = GetName()!;  // if you know it won't be null\n// or\nstring? name = GetName();  // if null is valid"
+          },
+          {
+            "errorCode": "CS8602",
+            "description": "Dereference of a possibly null reference.",
+            "before": "var len = obj.Name.Length;",
+            "after": "var len = obj?.Name?.Length ?? 0;\n// or\nif (obj?.Name is not null) { var len = obj.Name.Length; }"
+          },
+          {
+            "errorCode": "CS8604",
+            "description": "Possible null reference argument.",
+            "before": "DoWork(GetValue());",
+            "after": "DoWork(GetValue()!);\n// or add null guard\nvar val = GetValue() ?? throw new InvalidOperationException(\"Value required\");\nDoWork(val);"
+          },
+          {
+            "errorCode": "CS8618",
+            "description": "Non-nullable property must contain non-null value when exiting constructor.",
+            "before": "public class MyClass { public string Name { get; set; } }",
+            "after": "public class MyClass { public string Name { get; set; } = string.Empty; }\n// or\npublic class MyClass { public required string Name { get; set; } }"
+          }
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/csharp/nullable-references",
+        "https://learn.microsoft.com/dotnet/csharp/language-reference/compiler-messages/nullable-warnings"
+      ]
+    },
+
+    {
+      "id": "BC004",
+      "title": "Ambiguous overload resolution (C# 14)",
+      "area": "Language / C# 14",
+      "severity": "Low",
+      "errorCodes": ["CS0121"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "New overloads added in .NET 10 / C# 14 can cause previously unambiguous calls to become ambiguous, especially with null arguments or implicit conversions.",
+      "detectionPatterns": ["CS0121"],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Use explicit cast or named parameters to disambiguate.",
+        "before": {
+          "language": "csharp",
+          "code": "DoThing(null);\nLogger.Log(GetMessage());"
+        },
+        "after": {
+          "language": "csharp",
+          "code": "DoThing((string?)null);   // explicit cast\nLogger.Log(message: GetMessage());  // named parameter"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/csharp/whats-new/csharp-14"
+      ]
+    },
+
+    {
+      "id": "BC005",
+      "title": "Globalization — ICU mode default on Windows",
+      "area": "Globalization",
+      "severity": "Medium",
+      "errorCodes": ["CultureNotFoundException", "runtime behaviour change"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "In .NET 10, ICU globalization is the default on Windows (it was NLS before). This can cause changed string comparison, sorting, and casing behaviour for culture-sensitive operations.",
+      "detectionPatterns": [
+        "StringComparison",
+        "CultureInfo",
+        "string.Compare",
+        "OrderBy",
+        "ToUpper",
+        "ToLower"
+      ],
+      "effort": "Low",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Temporarily restore NLS behaviour, then plan to audit culture-sensitive code for ICU compatibility.",
+        "temporaryWorkaround": {
+          "file": ".csproj",
+          "code": "<ItemGroup>\n  <RuntimeHostConfigurationOption Include=\"System.Globalization.UseNls\" Value=\"true\" Trim=\"true\" />\n</ItemGroup>"
+        },
+        "longTermFix": "Audit all string comparisons. Use StringComparison.Ordinal or StringComparison.OrdinalIgnoreCase where culture-sensitivity is not required. Where culture-sensitivity is needed, verify behaviour under ICU."
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/core/compatibility/globalization/10.0/icu-default",
+        "https://learn.microsoft.com/dotnet/core/extensions/globalization-icu"
+      ]
+    },
+
+    {
+      "id": "BC006",
+      "title": "AspNetCore framework-included packages",
+      "area": "ASP.NET Core",
+      "severity": "Low",
+      "errorCodes": ["NU1605", "warning or duplicate symbol"],
+      "affectedAppTypes": ["ASP.NET Web API"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Several Microsoft.AspNetCore.* packages are now included directly in the net10.0 SDK and must not be referenced explicitly in .csproj files.",
+      "detectionPatterns": [
+        "Microsoft.AspNetCore.Http.Abstractions",
+        "Microsoft.AspNetCore.Routing",
+        "Microsoft.AspNetCore.Http.Extensions",
+        "Microsoft.AspNetCore.Mvc.Core",
+        "Microsoft.AspNetCore.Authorization"
+      ],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Remove explicit PackageReference entries for these packages. They ship with the SDK.",
+        "packagesToRemove": [
+          "Microsoft.AspNetCore.Http.Abstractions",
+          "Microsoft.AspNetCore.Routing",
+          "Microsoft.AspNetCore.Http.Extensions",
+          "Microsoft.AspNetCore.Mvc.Core",
+          "Microsoft.AspNetCore.Authorization",
+          "Microsoft.AspNetCore.Diagnostics",
+          "Microsoft.AspNetCore.Hosting",
+          "Microsoft.AspNetCore.Hosting.Abstractions"
+        ],
+        "before": {
+          "language": "xml",
+          "code": "<PackageReference Include=\"Microsoft.AspNetCore.Http.Abstractions\" Version=\"2.2.0\" />\n<PackageReference Include=\"Microsoft.AspNetCore.Routing\" Version=\"2.2.2\" />"
+        },
+        "after": {
+          "language": "xml",
+          "code": "<!-- Remove both lines — these are included in net10.0 SDK -->"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/aspnet/core/fundamentals/target-aspnetcore"
+      ]
+    },
+
+    {
+      "id": "BC007",
+      "title": "Swashbuckle / Swagger compatibility",
+      "area": "ASP.NET Core / OpenAPI",
+      "severity": "Medium",
+      "errorCodes": ["CS0246", "build failure", "runtime exception"],
+      "affectedAppTypes": ["ASP.NET Web API"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Swashbuckle.AspNetCore may not have a .NET 10 compatible release at launch. The built-in Microsoft.AspNetCore.OpenApi (available from .NET 9) is the recommended replacement.",
+      "detectionPatterns": [
+        "Swashbuckle.AspNetCore",
+        "AddSwaggerGen",
+        "UseSwagger",
+        "UseSwaggerUI"
+      ],
+      "effort": "Medium",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Replace Swashbuckle with Microsoft.AspNetCore.OpenApi and scalar or the built-in OpenAPI endpoint.",
+        "before": {
+          "language": "csharp",
+          "code": "builder.Services.AddSwaggerGen();\n// ...\napp.UseSwagger();\napp.UseSwaggerUI();"
+        },
+        "after": {
+          "language": "csharp",
+          "code": "builder.Services.AddOpenApi();\n// ...\napp.MapOpenApi();  // serves at /openapi/v1.json\n// For UI: add Scalar or Redoc NuGet package"
+        },
+        "packageChanges": {
+          "remove": ["Swashbuckle.AspNetCore"],
+          "add": ["Microsoft.AspNetCore.OpenApi", "Scalar.AspNetCore (optional, for UI)"]
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/aspnet/core/fundamentals/openapi/overview",
+        "https://scalar.com/blog/dotnet-openapi"
+      ]
+    },
+
+    {
+      "id": "BC008",
+      "title": "HttpClient / SocketsHttpHandler default changes",
+      "area": "Networking",
+      "severity": "Low",
+      "errorCodes": ["runtime behaviour change"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Default connection pool and timeout settings in SocketsHttpHandler have changed in .NET 10. Applications relying on default timeouts or connection limits may see different behaviour.",
+      "detectionPatterns": [
+        "HttpClient",
+        "SocketsHttpHandler",
+        "HttpClientHandler"
+      ],
+      "effort": "Low",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Explicitly configure PooledConnectionLifetime, ConnectTimeout, and PooledConnectionIdleTimeout if your application is sensitive to these defaults.",
+        "recommendation": {
+          "language": "csharp",
+          "code": "services.AddHttpClient(\"MyClient\")\n    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler\n    {\n        PooledConnectionLifetime = TimeSpan.FromMinutes(2),\n        ConnectTimeout = TimeSpan.FromSeconds(30),\n        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(1)\n    });"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/core/compatibility/networking/10.0"
+      ]
+    },
+
+    {
+      "id": "BC009",
+      "title": "Reflection emit APIs removed or sealed",
+      "area": "Reflection",
+      "severity": "Medium",
+      "errorCodes": ["CS0246", "CS1061", "NotSupportedException"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Some Reflection.Emit APIs used for runtime code generation have been removed or had their behaviour changed in .NET 10 as part of the Native AOT and trimming improvements.",
+      "detectionPatterns": [
+        "System.Reflection.Emit",
+        "ILGenerator",
+        "DynamicMethod",
+        "TypeBuilder",
+        "AssemblyBuilder"
+      ],
+      "effort": "High",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Audit reflection emit usage. Consider using source generators or compiled expressions as a more AOT-compatible alternative.",
+        "alternatives": [
+          "Roslyn Source Generators — for compile-time code generation",
+          "System.Linq.Expressions — for dynamic expression trees (still supported)",
+          "FastExpressionCompiler — NuGet alternative for expression compilation"
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/core/compatibility/reflection/10.0",
+        "https://learn.microsoft.com/dotnet/csharp/roslyn-sdk/source-generators-overview"
+      ]
+    },
+
+    {
+      "id": "BC010",
+      "title": "LINQ overload resolution changes",
+      "area": "LINQ",
+      "severity": "Low",
+      "errorCodes": ["CS0121", "CS1503"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "New LINQ overloads in .NET 10 (e.g. for CountBy, AggregateBy, Index) can cause previously valid calls to become ambiguous when using method groups or lambda overloads.",
+      "detectionPatterns": [
+        "CountBy",
+        "AggregateBy",
+        ".Index(",
+        "Enumerable."
+      ],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Add explicit type parameters or cast lambda arguments to disambiguate LINQ calls.",
+        "before": {
+          "language": "csharp",
+          "code": "var result = items.GroupBy(x => x.Category).Select(g => g.Count());"
+        },
+        "after": {
+          "language": "csharp",
+          "code": "var result = items.GroupBy(x => x.Category).Select(g => (int)g.Count());\n// or use explicit type argument\nvar result = items.CountBy(x => x.Category);"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/core/whats-new/dotnet-10/runtime#linq"
+      ]
+    },
+
+    {
+      "id": "BC011",
+      "title": "WPF — net10.0-windows TFM required",
+      "area": "WPF",
+      "severity": "Low",
+      "errorCodes": ["NETSDK1136", "build failure"],
+      "affectedAppTypes": ["WPF"],
+      "affectedFrameworks": ["net8.0-windows", "net9.0-windows"],
+      "description": "WPF projects must use the net10.0-windows TFM, not net10.0. Missing the -windows suffix causes a build failure because WPF APIs are Windows-only.",
+      "detectionPatterns": [
+        "<UseWPF>true</UseWPF>",
+        "UseWPF"
+      ],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Ensure the TargetFramework includes -windows suffix for all WPF projects.",
+        "before": {
+          "language": "xml",
+          "code": "<TargetFramework>net10.0</TargetFramework>\n<UseWPF>true</UseWPF>"
+        },
+        "after": {
+          "language": "xml",
+          "code": "<TargetFramework>net10.0-windows</TargetFramework>\n<UseWPF>true</UseWPF>"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/desktop/wpf/migration/"
+      ]
+    },
+
+    {
+      "id": "BC012",
+      "title": "WPF — third-party control library compatibility",
+      "area": "WPF",
+      "severity": "Medium",
+      "errorCodes": ["CS0246", "NuGet restore failure"],
+      "affectedAppTypes": ["WPF"],
+      "affectedFrameworks": ["net8.0-windows", "net9.0-windows"],
+      "description": "Third-party WPF control libraries (Telerik, DevExpress, Syncfusion, Infragistics, ActiPro) may not have .NET 10 compatible releases available at migration time.",
+      "detectionPatterns": [
+        "Telerik",
+        "DevExpress",
+        "Syncfusion",
+        "Infragistics",
+        "ActiPro"
+      ],
+      "effort": "Medium",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Check vendor release notes for .NET 10 support before upgrading WPF projects.",
+        "checklist": [
+          "Telerik UI for WPF — check https://www.telerik.com/support/whats-new/wpf",
+          "DevExpress WPF — check https://www.devexpress.com/products/net/controls/wpf/",
+          "Syncfusion WPF — check https://www.syncfusion.com/wpf-controls",
+          "Infragistics — check https://www.infragistics.com/products/wpf",
+          "If no .NET 10 release available: multi-target (net9.0-windows;net10.0-windows) until vendor supports it"
+        ]
+      },
+      "references": []
+    },
+
+    {
+      "id": "BC013",
+      "title": "NuGet PackageReference floating version behaviour",
+      "area": "NuGet / Package Management",
+      "severity": "Low",
+      "errorCodes": ["NU1103", "restore warning"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Floating version resolution (e.g. 8.0.*) behaves slightly differently in .NET 10 / NuGet 6.x+. Ranges that previously resolved may now resolve to a different version or fail.",
+      "detectionPatterns": [
+        "Version=\"*\"",
+        "Version=\"8.*\"",
+        "Version=\"9.*\""
+      ],
+      "effort": "Low",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Replace floating version ranges with explicit versions after running dotnet-outdated.",
+        "before": {
+          "language": "xml",
+          "code": "<PackageReference Include=\"Newtonsoft.Json\" Version=\"13.*\" />"
+        },
+        "after": {
+          "language": "xml",
+          "code": "<PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.3\" />"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/nuget/consume-packages/package-references-in-project-files#floating-versions"
+      ]
+    },
+
+    {
+      "id": "BC014",
+      "title": "System.Text.Json — stricter nullable serialization",
+      "area": "Serialization",
+      "severity": "Medium",
+      "errorCodes": ["JsonException", "runtime exception"],
+      "affectedAppTypes": ["ASP.NET Web API", "Azure Functions", "Console"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "System.Text.Json in .NET 10 enforces stricter handling of nullable reference types during serialization and deserialization. Properties marked non-nullable that receive null JSON values will throw by default.",
+      "detectionPatterns": [
+        "JsonSerializer.Deserialize",
+        "JsonSerializer.Serialize",
+        "[JsonRequired]",
+        "JsonSerializerOptions"
+      ],
+      "effort": "Low",
+      "autoFixable": false,
+      "fix": {
+        "summary": "Mark nullable properties with ? or configure JsonSerializerOptions to handle nullability.",
+        "options": [
+          {
+            "approach": "Mark properties correctly",
+            "before": "public string Name { get; set; }",
+            "after": "public string? Name { get; set; }  // if null is valid\n// or\npublic required string Name { get; set; }  // if null is invalid"
+          },
+          {
+            "approach": "Configure lenient options (temporary workaround)",
+            "code": "var options = new JsonSerializerOptions\n{\n    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,\n    NumberHandling = JsonNumberHandling.AllowReadingFromString\n};"
+          }
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/standard/serialization/system-text-json/required-properties"
+      ]
+    },
+
+    {
+      "id": "BC015",
+      "title": "Microsoft.Extensions.* version alignment",
+      "area": "Dependency Injection / Extensions",
+      "severity": "Low",
+      "errorCodes": ["NU1605", "version conflict warning"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Microsoft.Extensions.* packages (DependencyInjection, Logging, Hosting, Configuration, etc.) must be updated to version 10.x.x to align with .NET 10. Mixing v8/v9 packages with net10.0 TFM causes version conflict warnings or build errors.",
+      "detectionPatterns": [
+        "Microsoft.Extensions.DependencyInjection",
+        "Microsoft.Extensions.Logging",
+        "Microsoft.Extensions.Hosting",
+        "Microsoft.Extensions.Configuration",
+        "Microsoft.Extensions.Options"
+      ],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Update all Microsoft.Extensions.* packages to 10.0.0.",
+        "cpmFix": {
+          "file": "Directory.Packages.props",
+          "before": "<PackageVersion Include=\"Microsoft.Extensions.Hosting\" Version=\"8.0.0\" />",
+          "after": "<PackageVersion Include=\"Microsoft.Extensions.Hosting\" Version=\"10.0.0\" />"
+        },
+        "nonCpmFix": {
+          "command": "dotnet-outdated --upgrade"
+        }
+      },
+      "references": [
+        "https://learn.microsoft.com/dotnet/core/extensions/"
+      ]
+    },
+
+    {
+      "id": "BC016",
+      "title": "Application Insights 3.x telemetry API shape changes",
+      "area": "Telemetry / Observability",
+      "severity": "Medium",
+      "errorCodes": ["CS1501", "CS1061"],
+      "affectedAppTypes": ["All"],
+      "affectedFrameworks": ["net8.0", "net9.0"],
+      "description": "Upgrading Microsoft.ApplicationInsights to 3.x can break wrappers that relied on older event/exception overloads or attached numeric metrics directly to EventTelemetry or ExceptionTelemetry instances.",
+      "detectionPatterns": [
+        "Microsoft.ApplicationInsights",
+        "TrackEvent(",
+        "TrackException(",
+        "EventTelemetry",
+        "ExceptionTelemetry"
+      ],
+      "effort": "Low",
+      "autoFixable": true,
+      "fix": {
+        "summary": "Use TelemetryClient overloads that accept name/properties or exception/properties, and emit numeric values separately via TrackMetric.",
+        "before": {
+          "language": "csharp",
+          "code": "var telemetry = new EventTelemetry(eventName);\ntelemetry.Properties[\"key\"] = \"value\";\ntelemetry.Metrics[\"durationMs\"] = duration;\nclient.TrackEvent(telemetry);"
+        },
+        "after": {
+          "language": "csharp",
+          "code": "client.TrackEvent(eventName, properties);\nforeach (var metric in metrics)\n{\n    client.TrackMetric($\"{eventName}.{metric.Key}\", metric.Value, properties);\n}"
+        },
+        "notes": [
+          "Prefer TrackEvent(string, IDictionary<string,string>) for event properties.",
+          "Prefer TrackException(Exception, IDictionary<string,string>) for exception properties.",
+          "Use TrackMetric for numeric telemetry values instead of attaching them to EventTelemetry or ExceptionTelemetry."
+        ]
+      },
+      "references": [
+        "https://learn.microsoft.com/azure/azure-monitor/app/api-custom-events-metrics",
+        "https://learn.microsoft.com/dotnet/api/microsoft.applicationinsights.telemetryclient"
+      ]
+    }
+
+  ],
+
+  "quickReference": {
+    "byErrorCode": {
+      "CS0619": "BC001",
+      "SYSLIB0011": "BC001",
+      "CS8600": "BC003",
+      "CS8601": "BC003",
+      "CS8602": "BC003",
+      "CS8603": "BC003",
+      "CS8604": "BC003",
+      "CS8618": "BC003",
+      "CS8625": "BC003",
+      "CS0121": ["BC004", "BC010"],
+      "NETSDK1136": "BC011",
+      "NU1605": ["BC006", "BC015"]
+    },
+    "byAppType": {
+      "Azure Functions": ["BC002", "BC003", "BC004", "BC014", "BC015"],
+      "ASP.NET Web API": ["BC003", "BC004", "BC006", "BC007", "BC008", "BC014", "BC015"],
+      "Console": ["BC001", "BC003", "BC004", "BC005", "BC008", "BC013", "BC015"],
+      "WPF": ["BC001", "BC003", "BC005", "BC011", "BC012", "BC013", "BC015"],
+      "All": ["BC001", "BC003", "BC004", "BC005", "BC009", "BC010", "BC013", "BC015", "BC016"]
+    },
+    "bySeverity": {
+      "High": ["BC001", "BC002"],
+      "Medium": ["BC003", "BC005", "BC007", "BC009", "BC012", "BC014", "BC016"],
+      "Low": ["BC004", "BC006", "BC008", "BC010", "BC011", "BC013", "BC015"]
+    },
+    "autoFixable": ["BC001", "BC002", "BC003", "BC004", "BC006", "BC010", "BC011", "BC015", "BC016"]
+  }
+}

@@ -1,0 +1,27 @@
+# modernize-config.yaml
+dotnet:
+  runtime: net10.0
+  analysis:
+    domains:
+      - runtime-upgrade
+      - dependency-health
+      - cloud-readiness
+      - security
+      - performance
+
+cloud:
+  provider: azure
+  services:
+    - app-service
+    - functions
+    - service-bus
+    - storage
+    - key-vault
+    - app-configuration
+
+report:
+  format: html
+  output: ./migration-reports/modernize-report
+
+privacy:
+  mode: unrestricted

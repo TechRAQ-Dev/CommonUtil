@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0",
+  "targetFramework": "net11.0",
+  "generatedDate": "2026-05-11",
+  "referenceUrl": "https://learn.microsoft.com/dotnet/core/compatibility/11.0",
+  "breakingChanges": [],
+  "quickReference": {
+    "byErrorCode": {}
+  }
+}
